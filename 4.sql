@@ -1,4 +1,4 @@
---DROP TABULEK--
+--SMAZANI TABULEK--
 DROP TABLE student_studijni_program;
 DROP TABLE  predmet_student;
 DROP TABLE okruh_predmetu_predmet;
@@ -9,11 +9,10 @@ DROP TABLE predmet;
 DROP TABLE studijni_program;
 DROP TABLE doktorand;
 DROP TABLE student;
-
---DROP FUNKCI--
+DROP MATERIALIZED VIEW LOG ON predmet;
+DROP MATERIALIZED VIEW predmet_info;
 DROP FUNCTION stripAccentsv;
 
---=====================================
 --VYTVORENI TABULEK--
 CREATE TABLE studijni_program (
     id_programu varchar(20) NOT NULL PRIMARY KEY,
@@ -68,7 +67,7 @@ CREATE TABLE okruh_predmetu_predmet ( --zahrnuje
 );
 
 CREATE TABLE student(
-    login varchar(8) NOT NULL PRIMARY KEY CHECK(REGEXP_LIKE(login, 'x[a-z]{1,5}[0-9,a-z]{2}')),
+    login varchar(8) NOT NULL PRIMARY KEY,
     jmeno varchar(80) NOT NULL,
     prijmeni varchar(80) NOT NULL,
     adresa_ulice varchar(80) NOT NULL,
@@ -92,7 +91,7 @@ CREATE TABLE doktorand(
 
 
 CREATE TABLE predmet_student ( --registruje
-    login varchar(8) CHECK(REGEXP_LIKE(login, 'x[a-z]{1,5}[0-9,a-z]{2}')),
+    login varchar(8),
     id_predmetu varchar(3) NOT NULL,
     CONSTRAINT predmet_student_pk
             PRIMARY KEY (login,id_predmetu),
@@ -105,7 +104,7 @@ CREATE TABLE predmet_student ( --registruje
 );
 
 CREATE TABLE student_studijni_program ( --studuje
-    login varchar(8) NOT NULL CHECK(REGEXP_LIKE(login, 'x[a-z]{1,5}[0-9,a-z]{2}')),
+    login varchar(8) NOT NULL,
     id_programu varchar(20) NOT NULL,
     CONSTRAINT student_studijni_program_pk
         PRIMARY KEY (login,id_programu),
@@ -118,7 +117,7 @@ CREATE TABLE student_studijni_program ( --studuje
 );
 
 CREATE TABLE doktorand_predmet ( --podili se
-    login varchar(8) NOT NULL CHECK(REGEXP_LIKE(login, 'x[a-z]{1,5}[0-9,a-z]{2}')),
+    login varchar(8) NOT NULL,
     id_predmetu varchar(3) NOT NULL,
     CONSTRAINT doktorand_predmet_pk
         PRIMARY KEY (login,id_predmetu),
@@ -130,44 +129,19 @@ CREATE TABLE doktorand_predmet ( --podili se
         ON DELETE CASCADE
 );
 
---pomocna funkce maze diakritiku v prijmeni pro generaci loginu
-CREATE OR REPLACE FUNCTION stripAccentsv(prijmeni in varchar) RETURN varchar
-AS
-returnPrijemni varchar(20);
-BEGIN
-    returnPrijemni := lower(prijmeni);
-    returnPrijemni := replace(returnPrijemni,'ě','e');
-    returnPrijemni := replace(returnPrijemni,'š','s');
-    returnPrijemni := replace(returnPrijemni,'č','c');
-    returnPrijemni := replace(returnPrijemni,'ř','r');
-    returnPrijemni := replace(returnPrijemni,'ž','z');
-    returnPrijemni := replace(returnPrijemni,'ý','y');
-    returnPrijemni := replace(returnPrijemni,'á','a');
-    returnPrijemni := replace(returnPrijemni,'í','i');
-    returnPrijemni := replace(returnPrijemni,'é','e');
-    returnPrijemni := replace(returnPrijemni,'ů','u');
-    returnPrijemni := replace(returnPrijemni,'ú','u');
-    return returnPrijemni;
-end;
 
---1/2 trigger generujici student login pomoci 5ti ci mene pismen prijmeni do tvaru x-pismena-00
-CREATE OR REPLACE TRIGGER login_trigger
-	BEFORE INSERT ON student
-	FOR EACH ROW
-    declare new_login varchar(20);
-BEGIN
-	IF :NEW.login IS NULL THEN
-	    new_login := stripAccentsv(:NEW.prijmeni);
-	    if LENGTH(:NEW.prijmeni) < 5 THEN
-	        :NEW.login := to_char(concat(concat('x',substr(new_login,0,length(:NEW.prijmeni))),'00'));
-            end if;
-	    if LENGTH(:NEW.prijmeni) >= 5 THEN
-	        :NEW.login := to_char(concat(concat('x',substr(new_login,0,5)),'00'));
-        end if;
-	END IF;
-END;
+--NAPLNENI TABULEK--
 
---2/2 trigger pro kontrolu data akreditace, pokud je datum akreditace mensi nez dnesni datum vyvola se vyjimka
+INSERT INTO  studijni_program (id_programu, fakulta, delka, forma_studia)
+VALUES ('IT-BC-3','Fakulta Informačních technologií',3,'Prezenční');
+INSERT INTO  studijni_program (id_programu, fakulta, delka, forma_studia)
+VALUES ('IT-MGR-2','Fakulta Informačních technologií',2,'Prezenční');
+INSERT INTO  studijni_program (id_programu, fakulta, delka, forma_studia)
+VALUES ('MITAI','Fakulta Informačních technologií',2,'Prezenční');
+INSERT INTO  studijni_program (id_programu, fakulta, delka, forma_studia)
+VALUES ('VTI-DR-4','Fakulta Informačních technologií',4,'Prezenční');
+
+--trigger pro kontrolu data akreditace, pokud je datum akreditace mensi nez dnesni datum vyvola se vyjimka
 CREATE OR REPLACE TRIGGER akreditace_date_check
 AFTER INSERT OR UPDATE ON obor
 FOR EACH ROW
@@ -180,16 +154,10 @@ BEGIN
 
 END;
 
---NAPLNENI TABULEK--
-
-INSERT INTO  studijni_program (id_programu, fakulta, delka, forma_studia)
-VALUES ('IT-BC-3','Fakulta Informačních technologií',3,'Prezenční');
-INSERT INTO  studijni_program (id_programu, fakulta, delka, forma_studia)
-VALUES ('IT-MGR-2','Fakulta Informačních technologií',2,'Prezenční');
-INSERT INTO  studijni_program (id_programu, fakulta, delka, forma_studia)
-VALUES ('MITAI','Fakulta Informačních technologií',2,'Prezenční');
-INSERT INTO  studijni_program (id_programu, fakulta, delka, forma_studia)
-VALUES ('VTI-DR-4','Fakulta Informačních technologií',4,'Prezenční');
+--pri vlozeni oboru s datem akreditace koncicim v roce 2018 vyvola se vyjimka
+--INSERT INTO obor(id_oboru, nazev_oboru, akreditace_do, id_programu)
+--VALUES ('TST','Testovací Obor',TO_DATE('2018', 'yyyy'),'TE-ST-3');
+--################
 
 INSERT INTO obor(id_oboru, nazev_oboru, akreditace_do, id_programu)
 VALUES ('BIT','Informační technologie',TO_DATE('2025', 'yyyy'),'IT-BC-3');
@@ -263,6 +231,45 @@ INSERT INTO okruh_predmetu_predmet(id_okruhu, semestr, id_predmetu, id_oboru)
 VALUES ('P','Zimní','BIF','NBIO');
 INSERT INTO okruh_predmetu_predmet(id_okruhu, semestr, id_predmetu, id_oboru)
 VALUES ('P','Zimní','PBI','NBIO');
+
+--pomocna funkce maze diakritiku v prijmeni pro generaci loginu
+CREATE OR REPLACE FUNCTION stripAccentsv(prijmeni in varchar) RETURN varchar
+AS
+returnPrijemni varchar(20);
+BEGIN
+    returnPrijemni := lower(prijmeni);
+    returnPrijemni := replace(returnPrijemni,'ě','e');
+    returnPrijemni := replace(returnPrijemni,'š','s');
+    returnPrijemni := replace(returnPrijemni,'č','c');
+    returnPrijemni := replace(returnPrijemni,'ř','r');
+    returnPrijemni := replace(returnPrijemni,'ž','z');
+    returnPrijemni := replace(returnPrijemni,'ý','y');
+    returnPrijemni := replace(returnPrijemni,'á','a');
+    returnPrijemni := replace(returnPrijemni,'í','i');
+    returnPrijemni := replace(returnPrijemni,'é','e');
+    returnPrijemni := replace(returnPrijemni,'ů','u');
+    returnPrijemni := replace(returnPrijemni,'ú','u');
+    return returnPrijemni;
+end;
+
+--trigger generujici student login pomoci 5ti ci mene pismen prijmeni
+CREATE OR REPLACE TRIGGER login_trigger
+	BEFORE INSERT ON student
+	FOR EACH ROW
+    declare new_login varchar(20);
+BEGIN
+	IF :NEW.login IS NULL THEN
+	    new_login := stripAccentsv(:NEW.prijmeni);
+	    if LENGTH(:NEW.prijmeni) < 5 THEN
+	        :NEW.login := to_char(concat(concat('x',substr(new_login,0,length(:NEW.prijmeni))),'00'));
+            --:NEW.login := to_char(concat(concat('x',lower(substr(:NEW.prijmeni,0,length(:NEW.prijmeni)))),'00'));
+            end if;
+	    if LENGTH(:NEW.prijmeni) >= 5 THEN
+	        :NEW.login := to_char(concat(concat('x',substr(new_login,0,5)),'00'));
+            --:NEW.login := to_char(concat(concat('x',lower(substr(:NEW.prijmeni,0,5))),'00'));
+        end if;
+	END IF;
+END;
 
 --studenti
 INSERT INTO student(jmeno, prijmeni, adresa_ulice, adresa_ulice_popisne, adresa_mesto, adresa_psc, adresa_stat, datum_nar, pohlavi)
@@ -433,90 +440,105 @@ ORDER BY sum(p.kreditovy_obnos) DESC;
 
 --triggery 2x z toho jeden generujici PK nejake tabulky
 --demonstrace prvniho triggeru vsichni studenti a doktorandi by meli mit login ve tvaru "x - za 5 pismen sveho prijmeni - 00"
-
 select student.login from student;
 
---pri vlozeni oboru s datem akreditace koncicim v roce 2018 vyvola se vyjimka
--- INSERT INTO obor(id_oboru, nazev_oboru, akreditace_do, id_programu)
--- VALUES ('TST','Testovací Obor',TO_DATE('2018', 'yyyy'),'TE-ST-3');
---################
-
 --procedury
+
+--Procedura 1# počítá procentuální zastoupení pohlaví v studentských řadách
+CREATE OR REPLACE PROCEDURE studenti_pohlavi
+AS
+	zeny NUMBER;
+	muzi NUMBER;
+    total NUMBER;
+
+BEGIN
+	SELECT COUNT(*) INTO "zeny" FROM "studet"
+    WHERE pohlavi = "Žena";
+    SELECT COUNT(*) INTO "muzi" FROM "student"
+    WHERE pohlavi = "Muž";
+    total := muzi + zeny;
+    muzi := muzi / total * 100;
+    zeny := zeny / total * 100;
+
+    dbms_output.put_line('Procentuální zastoupení pohlaví mezi studenty:');¨
+    dbms_output.put_line('Muži:'muzi'%.')
+    dbms_output.put_line('Ženy:'zeny'%.')
+END;
+
+--Procedura 2# spočítá počet studentů jednotlivých programů (bakalářské studium, magisterské studium ...)
+CREATE PROCEDURE "seznam_studentu_programu"
+    ("program_student" IN VARCHAR)
+BEGIN
+SELECT * FROM student_studijni_program WHERE id_programu = "program_student";
+END;
+--Příklad použití 
+BEGIN student_studijni_program('MITAI'); END;
+
+--Procedura 3# 
 --TODO
 
 --index pro optimalizaci + ukazka + EXPLAIN PLAN
-
---explain plan bez indexu
 EXPLAIN PLAN FOR
-SELECT ssp.id_programu,
-       obor.id_oboru,
-       ps.id_predmetu,
-       COUNT(s.login)
-FROM student_studijni_program ssp
-JOIN obor ON obor.id_programu = ssp.id_programu
-JOIN student s ON ssp.login = s.login
-JOIN predmet_student ps ON s.login = ps.login
-GROUP BY ssp.id_programu, ps.id_predmetu,obor.id_oboru;
+SELECT student.adresa_mesto,
+       count(student.login)
+from student
+JOIN student_studijni_program ON student.login = student_studijni_program.login
+JOIN studijni_program on student_studijni_program.id_programu = studijni_program.id_programu
+WHERE studijni_program.delka = 3
+GROUP BY student.adresa_mesto
+ORDER BY count(student.login) DESC;
 
---vypis prvniho explain plan
 SELECT PLAN_TABLE_OUTPUT FROM TABLE(DBMS_XPLAN.DISPLAY());
 
---vytvoreni indexu
-CREATE INDEX pocet_studentu_index on obor (id_programu,id_oboru);
+CREATE INDEX student_mesto_index on student (adresa_mesto,login);
+CREATE INDEX studijni_program_index on studijni_program (delka,id_programu);
 
---druhy pokus
 EXPLAIN PLAN FOR
-SELECT ssp.id_programu,
-       obor.id_oboru,
-       ps.id_predmetu,
-       COUNT(s.login)
-FROM student_studijni_program ssp
-JOIN obor ON obor.id_programu = ssp.id_programu
-JOIN student s ON ssp.login = s.login
-JOIN predmet_student ps ON s.login = ps.login
-GROUP BY ssp.id_programu, ps.id_predmetu,obor.id_oboru;
+SELECT student.adresa_mesto,
+       count(student.login)
+from student
+JOIN student_studijni_program ON student.login = student_studijni_program.login
+JOIN studijni_program on student_studijni_program.id_programu = studijni_program.id_programu
+WHERE studijni_program.delka = 3
+GROUP BY student.adresa_mesto
+ORDER BY count(student.login) DESC;
 
---vypis druheho explain plan
 SELECT PLAN_TABLE_OUTPUT FROM TABLE(DBMS_XPLAN.DISPLAY());
---drop indexu
-DROP INDEX pocet_studentu_index;
+
+DROP INDEX student_mesto_index;
+DROP INDEX studijni_program_index;
 
 -- definice pristupovych prav
 --xsvobod1t
-GRANT ALL ON predmet_student TO xsvobo1t;
-GRANT SELECT ON okruh_predmetu TO xsvobo1t;
-GRANT SELECT ON predmet TO xsvobo1t;
-GRANT SELECT ON okruh_predmetu_predmet TO xsvobo1t;
-GRANT SELECT ON studijni_program to xsvobo1t;
-GRANT SELECT ON obor to xsvobo1t;
+GRANT ALL ON doktorand TO xsvobo1t;
+GRANT ALL ON obor TO xsvobo1t;
+GRANT ALL ON okruh_predmetu TO xsvobo1t;
+GRANT ALL ON predmet TO xsvobo1t;
+GRANT ALL ON student TO xsvobo1t;
+GRANT ALL ON studijni_program TO xsvobo1t;
 --plus procedury
 
 --materilalizovany pohled
---DROP MV--
-DROP MATERIALIZED VIEW predmet_info;
 
---vytvoreni MV
+CREATE MATERIALIZED VIEW LOG ON predmet WITH PRIMARY KEY, ROWID(kreditovy_obnos) INCLUDING NEW VALUES;
+
 CREATE MATERIALIZED VIEW predmet_info
-CACHE --urychlovani pri opakovanem dotazovani
-BUILD IMMEDIATE --sestaveni hned po spusteni
-REFRESH ON COMMIT --pohled se aktualizuje az po prikazu COMMIT
-ENABLE QUERY REWRITE --optimalizace
-AS SELECT ps.id_predmetu,
-          p.nazev,
-          p.kreditovy_obnos
-FROM predmet_student ps
-JOIN predmet p ON ps.id_predmetu = p.id_predmetu
-WHERE ps.login = 'xsvobo00';
+CACHE
+BUILD IMMEDIATE
+REFRESH FAST ON COMMIT
+ENABLE QUERY REWRITE
+AS SELECT p.kreditovy_obnos, count(p.kreditovy_obnos) as kredity
+FROM predmet p
+GROUP BY p.kreditovy_obnos
+ORDER BY count(p.kreditovy_obnos) desc;
 
---predani prav druhemu clenu
 GRANT ALL ON predmet_info TO xsvobo1t;
---vypis MV
+
 SELECT * from predmet_info;
 
---demonstrace prikazu COMMIT
-INSERT INTO predmet_student(login, id_predmetu)
-VALUES ('xsvobo00','ITW');
+INSERT INTO predmet(id_predmetu, nazev, kreditovy_obnos, zpusob_zakonceni, zapocet, garant)
+VALUES ('TSs','TesttPredmet',6,'Zkouška','ANO',NULL);
 
 COMMIT;
---druhy vypis jiz aktualizovaneho MV
+
 SELECT * from predmet_info;
